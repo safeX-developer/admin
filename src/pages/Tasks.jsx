@@ -1,64 +1,66 @@
 import React, { useState, useEffect } from 'react';
-import { Add, MoreVert, YouTube, Facebook, Twitter, Chat } from '@mui/icons-material';
+import { Add, MoreVert, YouTube, Facebook, Twitter, Chat, ChevronLeft, ChevronRight, TaskAlt } from '@mui/icons-material';
 import CreateTaskModal from './tasks/CreateTaskModal';
 import EditTaskModal from './tasks/EditTaskModal';
 import DeleteTaskModal from './tasks/DeleteTaskModal';
+import { useApp } from '../context/app.context';
 
 export default function Tasks() {
-  const [tasks, setTasks] = useState([
-    {
-      id: 'TASK-001',
-      type: 'youtube',
-      rewardAmount: 50,
-      description: 'Watch our product introduction video and subscribe to our channel',
-      link: 'https://youtube.com/watch?v=example1',
-      isActive: true
-    },
-    {
-      id: 'TASK-002',
-      type: 'twitter',
-      rewardAmount: 30,
-      description: 'Follow our Twitter account and retweet our latest announcement',
-      link: 'https://twitter.com/example/status/123456789',
-      isActive: true
-    },
-    {
-      id: 'TASK-003',
-      type: 'discord',
-      rewardAmount: 40,
-      description: 'Join our Discord server and introduce yourself in the #general channel',
-      link: 'https://discord.gg/example',
-      isActive: true
-    },
-    {
-      id: 'TASK-004',
-      type: 'facebook',
-      rewardAmount: 25,
-      description: 'Like our Facebook page and share our latest post',
-      link: 'https://facebook.com/example',
-      isActive: true
-    },
-    {
-      id: 'TASK-005',
-      type: 'youtube',
-      rewardAmount: 60,
-      description: 'Watch our tutorial video and leave a comment',
-      link: 'https://youtube.com/watch?v=example2',
-      isActive: false
-    },
-  ]);
+  const { api } = useApp();
+  const [tasks, setTasks] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [pagination, setPagination] = useState({
+    page: 1,
+    limit: 10,
+    total: 0,
+    pages: 0
+  });
+
+  // Fetch tasks with pagination
+  const fetchTasks = async (page = 1, limit = 10) => {
+    try {
+      setLoading(true);
+      const response = await api.getTasks({ page, limit });
+      setTasks(response.data.tasks);
+      setPagination(response.data.pagination);
+    } catch (error) {
+      console.error("Error fetching tasks:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchTasks(pagination.page, pagination.limit);
+  }, []);
+
+  // Handle page change
+  const handlePageChange = (newPage) => {
+    if (newPage > 0 && newPage <= pagination.pages) {
+      setPagination({ ...pagination, page: newPage });
+      fetchTasks(newPage, pagination.limit);
+    }
+  };
+
+  // Handle limit change
+  const handleLimitChange = (e) => {
+    const newLimit = parseInt(e.target.value);
+    setPagination({ ...pagination, limit: newLimit, page: 1 });
+    fetchTasks(1, newLimit);
+  };
 
   // Modal states
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [currentTask, setCurrentTask] = useState(null);
-  
+ 
   // Dropdown menu states
   const [openMenuId, setOpenMenuId] = useState(null);
 
   // Toggle dropdown menu
-  const toggleMenu = (taskId) => {
+  const toggleMenu = (taskId, e) => {
+    e.stopPropagation();
     if (openMenuId === taskId) {
       setOpenMenuId(null);
     } else {
@@ -67,27 +69,48 @@ export default function Tasks() {
   };
 
   // Handle create task
-  const handleCreateTask = (newTask) => {
-    // Generate a new task ID
-    const taskId = `TASK-${String(tasks.length + 1).padStart(3, '0')}`;
-    setTasks([...tasks, { ...newTask, id: taskId, isActive: true }]);
-    setIsCreateModalOpen(false);
+  const handleCreateTask = async (newTask) => {
+    try {
+      setLoading(true);
+      await api.createTask(newTask);
+      fetchTasks(pagination.page, pagination.limit);
+      setIsCreateModalOpen(false);
+    } catch (error) {
+      console.error("Error creating task:", error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Handle edit task
-  const handleEditTask = (updatedTask) => {
-    setTasks(tasks.map(task => 
-      task.id === updatedTask.id ? updatedTask : task
-    ));
-    setIsEditModalOpen(false);
-    setCurrentTask(null);
+  const handleEditTask = async (updatedTask) => {
+
+    try {
+      setLoading(true);
+      await api.editTask(updatedTask.taskId, updatedTask);
+      fetchTasks(pagination.page, pagination.limit);
+      setIsEditModalOpen(false);
+      setCurrentTask(null);
+    } catch (error) {
+      console.error("Error updating task:", error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Handle delete task
-  const handleDeleteTask = (taskId) => {
-    setTasks(tasks.filter(task => task.id !== taskId));
-    setIsDeleteModalOpen(false);
-    setCurrentTask(null);
+  const handleDeleteTask = async (taskId) => {
+    try {
+      setLoading(true);
+      await api.deleteTask(taskId);
+      fetchTasks(pagination.page, pagination.limit);
+      setIsDeleteModalOpen(false);
+      setCurrentTask(null);
+    } catch (error) {
+      console.error("Error deleting task:", error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Open edit modal
@@ -131,12 +154,74 @@ export default function Tasks() {
     const handleClickOutside = () => {
       setOpenMenuId(null);
     };
-
     document.addEventListener('click', handleClickOutside);
     return () => {
       document.removeEventListener('click', handleClickOutside);
     };
   }, []);
+
+  // Generate pagination buttons
+  const renderPaginationButtons = () => {
+    const buttons = [];
+    const maxVisibleButtons = 5;
+    let startPage = Math.max(1, pagination.page - Math.floor(maxVisibleButtons / 2));
+    let endPage = Math.min(pagination.pages, startPage + maxVisibleButtons - 1);
+    
+    if (endPage - startPage + 1 < maxVisibleButtons) {
+      startPage = Math.max(1, endPage - maxVisibleButtons + 1);
+    }
+    
+    // Previous button
+    buttons.push(
+      <button
+        key="prev"
+        onClick={() => handlePageChange(pagination.page - 1)}
+        disabled={pagination.page === 1}
+        className={`px-3 py-1 rounded-md ${
+          pagination.page === 1 
+            ? 'text-gray-400 cursor-not-allowed' 
+            : 'text-gray-700 hover:bg-gray-200'
+        }`}
+      >
+        <ChevronLeft fontSize="small" />
+      </button>
+    );
+    
+    // Page buttons
+    for (let i = startPage; i <= endPage; i++) {
+      buttons.push(
+        <button
+          key={i}
+          onClick={() => handlePageChange(i)}
+          className={`px-3 py-1 rounded-md ${
+            pagination.page === i 
+              ? 'bg-blue-600 text-white' 
+              : 'text-gray-700 hover:bg-gray-200'
+          }`}
+        >
+          {i}
+        </button>
+      );
+    }
+    
+    // Next button
+    buttons.push(
+      <button
+        key="next"
+        onClick={() => handlePageChange(pagination.page + 1)}
+        disabled={pagination.page === pagination.pages}
+        className={`px-3 py-1 rounded-md ${
+          pagination.page === pagination.pages 
+            ? 'text-gray-400 cursor-not-allowed' 
+            : 'text-gray-700 hover:bg-gray-200'
+        }`}
+      >
+        <ChevronRight fontSize="small" />
+      </button>
+    );
+    
+    return buttons;
+  };
 
   return (
     <>
@@ -185,100 +270,152 @@ export default function Tasks() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                {tasks.map((task, index) => (
-                  <tr key={task.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900">{task.id}</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center">
-                        {getTaskTypeIcon(task.type)}
-                        <span className="ml-2 text-sm text-gray-900">{formatTaskType(task.type)}</span>
+                {loading ? (
+                  // Loading state
+                  <tr>
+                    <td colSpan="7" className="px-6 py-16 text-center">
+                      <div className="flex flex-col items-center justify-center">
+                        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
+                        <p className="text-gray-500">Loading tasks...</p>
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900">{task.rewardAmount} points</div>
+                  </tr>
+                ) : tasks.length === 0 ? (
+                  // Empty state
+                  <tr>
+                    <td colSpan="7" className="px-6 py-16 text-center">
+                      <div className="flex flex-col items-center justify-center">
+                        <TaskAlt className="text-gray-400 text-6xl mb-4" />
+                        <h3 className="text-lg font-medium text-gray-900 mb-1">No tasks found</h3>
+                        <p className="text-gray-500 mb-4">Create your first task to get started</p>
+                        <button
+                          onClick={() => setIsCreateModalOpen(true)}
+                          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center"
+                        >
+                          <Add className="mr-1" fontSize="small" />
+                          Create Task
+                        </button>
+                      </div>
                     </td>
+                  </tr>
+                ) : (
+                  // Tasks list
+                  tasks.map((task, index) => (
+                    <tr key={task.taskId} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm font-medium text-gray-900">{task.taskId}</div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center">
+                          {getTaskTypeIcon(task.type)}
+                          <span className="ml-2 text-sm text-gray-900">{formatTaskType(task.type)}</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm font-medium text-gray-900">{task.rewardAmount} points</div>
+                      </td>
                       <td className="px-6 py-4">
                         <div className="text-sm text-gray-900 max-w-md">
-                          {task.description.length > 13 
-                            ? `${task.description.substring(0, 13)}...` 
+                          {task.description.length > 50
+                            ? `${task.description.substring(0, 50)}...`
                             : task.description}
                         </div>
                       </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <a 
-                        href={task.link} 
-                        target="_blank" 
-                        rel="noopener noreferrer" 
-                        className="text-sm text-blue-600 hover:text-blue-900 hover:underline"
-                      >
-                        View Link
-                      </a>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
-                        ${task.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
-                        {task.isActive ? 'Active' : 'Inactive'}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium relative">
-                      <button 
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleMenu(task.id);
-                        }}
-                        className="text-gray-500 hover:text-gray-700"
-                      >
-                        <MoreVert />
-                      </button>
-                      
-                      {/* Dropdown menu */}
-                      {openMenuId === task.id && (
-                        <div className="absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-10">
-                          <div className="py-1" role="menu" aria-orientation="vertical">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openEditModal(task);
-                              }}
-                              className="w-full text-left block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                              role="menuitem"
-                            >
-                              Edit Task
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openDeleteModal(task);
-                              }}
-                              className="w-full text-left block px-4 py-2 text-sm text-red-600 hover:bg-gray-100"
-                              role="menuitem"
-                            >
-                              Delete Task
-                            </button>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <a
+                          href={task.link}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sm text-blue-600 hover:text-blue-900 hover:underline"
+                        >
+                          View Link
+                        </a>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full
+                          ${task.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
+                          {task.isActive ? 'Active' : 'Inactive'}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium relative">
+                        <button
+                          onClick={(e) => toggleMenu(task.taskId, e)}
+                          className="text-gray-500 hover:text-gray-700"
+                        >
+                          <MoreVert />
+                        </button>
+                         
+                        {/* Dropdown menu */}
+                        {openMenuId === task.taskId && (
+                          <div className="absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-10">
+                            <div className="py-1" role="menu" aria-orientation="vertical">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openEditModal(task);
+                                }}
+                                className="w-full text-left block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                                role="menuitem"
+                              >
+                                Edit Task
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openDeleteModal(task);
+                                }}
+                                className="w-full text-left block px-4 py-2 text-sm text-red-600 hover:bg-gray-100"
+                                role="menuitem"
+                              >
+                                Delete Task
+                              </button>
+                            </div>
                           </div>
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                ))}
+                        )}
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
+          
+          {/* Pagination controls */}
+          {!loading && tasks.length > 0 && (
+            <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex items-center justify-between">
+              <div className="flex items-center">
+                <span className="text-sm text-gray-700 mr-2">
+                  Showing {(pagination.page - 1) * pagination.limit + 1} to {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} tasks
+                </span>
+                <select
+                  value={pagination.limit}
+                  onChange={handleLimitChange}
+                  className="border border-gray-300 rounded-md text-sm px-2 py-1"
+                >
+                  <option value="5">5 per page</option>
+                  <option value="10">10 per page</option>
+                  <option value="25">25 per page</option>
+                  <option value="50">50 per page</option>
+                </select>
+              </div>
+              <div className="flex space-x-1">
+                {renderPaginationButtons()}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
       {/* Modals */}
       {isCreateModalOpen && (
-        <CreateTaskModal 
+        <CreateTaskModal
           onClose={() => setIsCreateModalOpen(false)}
           onSubmit={handleCreateTask}
         />
       )}
-      
+       
       {isEditModalOpen && currentTask && (
-        <EditTaskModal 
+        <EditTaskModal
           task={currentTask}
           onClose={() => {
             setIsEditModalOpen(false);
@@ -287,15 +424,15 @@ export default function Tasks() {
           onSubmit={handleEditTask}
         />
       )}
-      
+       
       {isDeleteModalOpen && currentTask && (
-        <DeleteTaskModal 
+        <DeleteTaskModal
           task={currentTask}
           onClose={() => {
             setIsDeleteModalOpen(false);
             setCurrentTask(null);
           }}
-          onConfirm={() => handleDeleteTask(currentTask.id)}
+          onConfirm={() => handleDeleteTask(currentTask.taskId)}
         />
       )}
     </>
